@@ -179,8 +179,13 @@ func (sid *Shortid) MustGenerate() string {
 }
 
 // GenerateBuffered generates a new short Id into the supplied buffer
-func (sid *Shortid) GenerateBuffered(buf []rune, shuf bool) error {
-	return sid.GenerateInternalBuffered(buf, nil, sid.epoch, shuf)
+func (sid *Shortid) GenerateBuffered(buf []rune) error {
+	return sid.GenerateInternalBuffered(buf, nil, sid.epoch, false)
+}
+
+// GenerateRandomBuffered generates a new short Id into the supplied buffer with the random shuffle
+func (sid *Shortid) GenerateRandomBuffered(buf []rune) error {
+	return sid.GenerateInternalBuffered(buf, nil, sid.epoch, true)
 }
 
 // GenerateInternal should only be used for testing purposes.

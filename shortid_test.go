@@ -4,9 +4,11 @@
 package shortid_test
 
 import (
-	"github.com/teris-io/shortid"
+	"errors"
 	"testing"
 	"time"
+
+	"github.com/tarb/shortid"
 )
 
 func Test_onGetDefault_defaultInstance(t *testing.T) {
@@ -305,5 +307,80 @@ func TestAbc_onAlphabet_success(t *testing.T) {
 	expected := "gzmZM7VINvOFcpho01x-fYPs8Q_urjq6RkiWGn4SHDdK5t2TAJbaBLEyUwlX9C3e"
 	if abc.Alphabet() != expected {
 		t.Errorf("expected %v, found %v", expected, abc.Alphabet())
+	}
+}
+
+//
+func Benchmark_Generate(b *testing.B) {
+	b.StopTimer()
+	g := shortid.MustNew(1, shortid.DefaultABC, 1)
+	b.StartTimer()
+
+	for n := 0; n < b.N; n++ {
+		g.MustGenerate()
+	}
+}
+
+//
+func Test_GenerateRandomBuffered(t *testing.T) {
+	g := shortid.MustNew(1, shortid.DefaultABC, 1)
+	seen := make(map[string]struct{})
+	buf := make([]rune, 12)
+
+	for i := 0; i < 1e6; i++ {
+		err := g.GenerateRandomBuffered(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		str := string(buf)
+		if _, ok := seen[str]; !ok {
+			seen[str] = struct{}{}
+		} else {
+			t.Fatal(errors.New("dupe " + str))
+		}
+	}
+}
+
+//
+func Benchmark_GenerateRandomBuffered(b *testing.B) {
+	b.StopTimer()
+	g := shortid.MustNew(1, shortid.DefaultABC, 1)
+	buf := make([]rune, 12)
+	b.StartTimer()
+
+	for n := 0; n < b.N; n++ {
+		g.GenerateRandomBuffered(buf)
+	}
+}
+
+//
+func Test_GenerateBuffered(t *testing.T) {
+	g := shortid.MustNew(1, shortid.DefaultABC, 1)
+	seen := make(map[string]struct{})
+	buf := make([]rune, 12)
+
+	for i := 0; i < 1e6; i++ {
+		err := g.GenerateBuffered(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		str := string(buf)
+		if _, ok := seen[str]; !ok {
+			seen[str] = struct{}{}
+		} else {
+			t.Fatal(errors.New("dupe " + str))
+		}
+	}
+}
+
+//
+func Benchmark_GenerateBuffered(b *testing.B) {
+	b.StopTimer()
+	g := shortid.MustNew(1, shortid.DefaultABC, 1)
+	buf := make([]rune, 12)
+	b.StartTimer()
+
+	for n := 0; n < b.N; n++ {
+		g.GenerateBuffered(buf)
 	}
 }
