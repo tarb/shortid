@@ -178,6 +178,11 @@ func (sid *Shortid) MustGenerate() string {
 	panic(err)
 }
 
+// GenerateBuffered generates a new short Id into the supplied buffer
+func (sid *Shortid) GenerateBuffered(buf []rune) error {
+	return sid.GenerateInternalBuffered(buf, nil, sid.epoch)
+}
+
 // GenerateInternal should only be used for testing purposes.
 func (sid *Shortid) GenerateInternal(tm *time.Time, epoch time.Time) (string, error) {
 	ms, count := sid.getMsAndCounter(tm, epoch)
@@ -201,6 +206,31 @@ func (sid *Shortid) GenerateInternal(tm *time.Time, epoch time.Time) (string, er
 		}
 	}
 	return string(idrunes), nil
+}
+
+// GenerateInternalBuffered should only be used for testing purposes.
+func (sid *Shortid) GenerateInternalBuffered(buf []rune, tm *time.Time, epoch time.Time) error {
+	if len(buf) < 12 {
+		return errors.New("buffer to small, required len of 12")
+	}
+
+	ms, count := sid.getMsAndCounter(tm, epoch)
+
+	if err := sid.abc.EncodeBuffered(buf[:8], ms, 5); err != nil {
+		return err
+	}
+
+	if err := sid.abc.EncodeBuffered(buf[8:9], ms, 5); err != nil {
+		return err
+	}
+
+	if count > 0 {
+		if err := sid.abc.EncodeBuffered(buf[9:], count, 6); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 func (sid *Shortid) getMsAndCounter(tm *time.Time, epoch time.Time) (uint, uint) {
@@ -325,6 +355,39 @@ func (abc *Abc) Encode(val, nsymbols, digits uint) ([]rune, error) {
 		res[i] = abc.alphabet[index]
 	}
 	return res, nil
+}
+
+// Encode encodes a given value into a slice of runes of length nsymbols. In case nsymbols==0, the
+// length of the result is automatically computed from data. Even if fewer symbols is required to
+// encode the data than nsymbols, all positions are used encoding 0 where required to guarantee
+// uniqueness in case further data is added to the sequence. The value of digits [4,6] represents
+// represents n in 2^n, which defines how much randomness flows into the algorithm: 4 -- every value
+// can be represented by 4 symbols in the alphabet (permitting at most 16 values), 5 -- every value
+// can be represented by 2 symbols in the alphabet (permitting at most 32 values), 6 -- every value
+// is represented by exactly 1 symbol with no randomness (permitting 64 values).
+func (abc *Abc) EncodeBuffered(buf []rune, val, digits uint) error {
+	var computedSize uint = 1
+	if val >= 1 {
+		computedSize = uint(math.Log2(float64(val)))/digits + 1
+	}
+	if uint(len(buf)) < computedSize {
+		return fmt.Errorf("cannot accommodate data, need %v digits, got %v", computedSize, len(buf))
+	}
+
+	mask := 1<<digits - 1
+	random := make([]int, len(buf))
+	// no random component if digits == 6
+	if digits < 6 {
+		copy(random, maskedRandomInts(len(random), 0x3f-mask))
+	}
+
+	for i := range buf {
+		shift := digits * uint(i)
+		index := (int(val>>shift) & mask) | random[i]
+		buf[i] = abc.alphabet[index]
+	}
+
+	return nil
 }
 
 // MustEncode acts just like Encode, but panics instead of returning errors.
