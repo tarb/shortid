@@ -179,8 +179,8 @@ func (sid *Shortid) MustGenerate() string {
 }
 
 // GenerateBuffered generates a new short Id into the supplied buffer
-func (sid *Shortid) GenerateBuffered(buf []rune) error {
-	return sid.GenerateInternalBuffered(buf, nil, sid.epoch)
+func (sid *Shortid) GenerateBuffered(buf []rune, shuf bool) error {
+	return sid.GenerateInternalBuffered(buf, nil, sid.epoch, shuf)
 }
 
 // GenerateInternal should only be used for testing purposes.
@@ -209,21 +209,25 @@ func (sid *Shortid) GenerateInternal(tm *time.Time, epoch time.Time) (string, er
 }
 
 // GenerateInternalBuffered should only be used for testing purposes.
-func (sid *Shortid) GenerateInternalBuffered(buf []rune, tm *time.Time, epoch time.Time) error {
+func (sid *Shortid) GenerateInternalBuffered(buf []rune, tm *time.Time, epoch time.Time, shuf bool) error {
 	if len(buf) < 12 {
 		return errors.New("buffer to small, required len of 12")
+	}
+	digits := uint(6)
+	if shuf {
+		digits = 5
 	}
 
 	ms, count := sid.getMsAndCounter(tm, epoch)
 
-	if err := sid.abc.EncodeBuffered(buf[:8], ms, 5); err != nil {
+	if err := sid.abc.EncodeBuffered(buf[:8], ms, digits); err != nil {
 		return err
 	}
 
-	if err := sid.abc.EncodeBuffered(buf[8:9], ms, 5); err != nil {
+	if err := sid.abc.EncodeBuffered(buf[8:9], sid.worker, digits); err != nil {
 		return err
 	}
-
+	buf[9], buf[10], buf[11] = '=', '=', '='
 	if count > 0 {
 		if err := sid.abc.EncodeBuffered(buf[9:], count, 6); err != nil {
 			return err
@@ -238,9 +242,9 @@ func (sid *Shortid) getMsAndCounter(tm *time.Time, epoch time.Time) (uint, uint)
 	defer sid.mx.Unlock()
 	var ms uint
 	if tm != nil {
-		ms = uint(tm.Sub(epoch).Nanoseconds() / 1000000)
+		ms = uint(tm.Sub(epoch).Nanoseconds() / 1e6)
 	} else {
-		ms = uint(time.Now().Sub(epoch).Nanoseconds() / 1000000)
+		ms = uint(time.Now().Sub(epoch).Nanoseconds() / 1e6)
 	}
 	if ms == sid.ms {
 		sid.count++
@@ -357,7 +361,7 @@ func (abc *Abc) Encode(val, nsymbols, digits uint) ([]rune, error) {
 	return res, nil
 }
 
-// Encode encodes a given value into a slice of runes of length nsymbols. In case nsymbols==0, the
+// EncodeBuffered encodes a given value into a slice of runes of length nsymbols. In case nsymbols==0, the
 // length of the result is automatically computed from data. Even if fewer symbols is required to
 // encode the data than nsymbols, all positions are used encoding 0 where required to guarantee
 // uniqueness in case further data is added to the sequence. The value of digits [4,6] represents
@@ -375,15 +379,21 @@ func (abc *Abc) EncodeBuffered(buf []rune, val, digits uint) error {
 	}
 
 	mask := 1<<digits - 1
-	random := make([]int, len(buf))
+
 	// no random component if digits == 6
+	var random []int
 	if digits < 6 {
+		random = make([]int, len(buf))
 		copy(random, maskedRandomInts(len(random), 0x3f-mask))
 	}
 
 	for i := range buf {
+		rand := 0
+		if digits < 6 {
+			rand = random[i]
+		}
 		shift := digits * uint(i)
-		index := (int(val>>shift) & mask) | random[i]
+		index := (int(val>>shift) & mask) | rand
 		buf[i] = abc.alphabet[index]
 	}
 
